@@ -1,5 +1,6 @@
 import logging
-import sys
+import re
+import time
 import socket
 import json
 from threading import Thread, Event
@@ -21,6 +22,8 @@ class Client:
         self.opts = opts
         self.connections = {}
         self.is_registered = False
+        self.delay = 500 / 1000  # 500ms (500ms/1000ms = 0.5s)
+        self.is_in_groupchat = False
 
     def encode_message(self, type, payload=None):
         """Convert plaintext user input to serialized message 'packet'."""
@@ -45,14 +48,84 @@ class Client:
         self.stop_event.set()
         raise ClientError(f"Client aborted... {signum}")
 
-    def handle_request(self, sender_ip, payload):
+    def handle_request(self, sock, sender_ip, payload):
         """Handle different request types (e.g. registration_confirmation)."""
         if payload.get("type", "") == "registration_confirmation":
             logging.info(f"Welcome, You are registered.")
             self.is_registered = True
+        elif payload.get("type", "") == "registration_error":
+            logging.info(payload.get("payload", {}).get("message", ""))
+            # @todo exit here somehow
         elif payload.get("type", "") == "state_change":
             self.connections = payload.get("payload")
             logging.info(f"Client table updated.")
+        elif payload.get("type", "") == "deregistration_confirmation":
+            self.is_registered = False
+            logging.info("You are Offline. Bye.")
+            # @todo handle closing this thread better
+        elif payload.get("type", "") == "message":
+            sender_name = payload.get("metadata", {}).get("name")
+            message = payload.get("payload", "")
+            if not self.is_in_groupchat:
+                print(f"{sender_name}: {message}")
+                # send ack back to user
+                self.send_dm_ack(sock, sender_name)
+            else:
+                ## @todo enqueue and then send once out of groupchat
+                print("@todo")
+        else:
+            print(f"got unknown message: {payload}")
+
+    def send_dm(self, sock, recipient_name, user_input):
+        """Sends a private DM to another client."""
+        message = self.encode_message("message", user_input)
+        # @todo what happens if they DON'T EXIST IN TABLE
+        if recipient_name not in self.connections:
+            logging.info(f"Unable to send to non-existent {recipient_name}.")
+            return
+
+        recipient_metadata = self.connections.get(recipient_name, {})
+        client_port = recipient_metadata.get("client_port")
+        client_ip = "0.0.0.0"  # @todo we need to track this on client INIT
+        client_destination = (client_ip, client_port)
+
+        try:
+            sock.sendto(message, client_destination)
+        except socket.error as e:
+            raise ClientError(f"UDP socket error: {e}")
+
+    def send_dm_ack(self, sock, recipient_name):
+        """Sends an ACK to the sender of an incoming DM."""
+        recipient_metadata = self.connections.get(recipient_name, {})
+        client_port = recipient_metadata.get("client_port")
+        client_ip = "0.0.0.0"  # @todo we need to track this on client INIT
+        client_destination = (client_ip, client_port)
+        message = self.encode_message("message_ack")
+        try:
+            sock.sendto(message, client_destination)
+        except socket.error as e:
+            raise ClientError(f"UDP socket error: {e}")
+
+    def send_message(self, sock, user_input):
+        """Parses user plaintext and sends to proper destination."""
+        ### CHECK IF IN GROUP CHAT, NO DM IF IN GROUPCHAT
+        if re.match("dereg (.*)", user_input):
+            # we don't need this since its already known at startup
+            name = user_input.split(" ")[1]
+            self.deregister(sock)
+        elif re.match("send (.*) (.*)", user_input):
+            print("USER INPUT: ", user_input)
+            name = user_input.split(" ")[1]
+            message = " ".join(user_input.split(" ")[2:])
+            print("sending this: ", message)
+            self.send_dm(sock, name, message)
+
+            # Determine if private message (regex match `send <name> <message>`)
+            # Lookup IP,port for recipient `<name>`
+            # Send to recipient, wait for ack, send ack back
+            # if timeout 500ms -> notify server to upate table
+        else:
+            logging.info(f"Unknown command `{user_input}`.")
 
     def start(self):
         """Start both the user input listener and server event listener."""
@@ -65,21 +138,37 @@ class Client:
             server_thread.start()
 
             sock = self.create_sock()
-            server_destination = (self.opts["server_ip"], self.opts["server_port"])
 
             while server_thread.is_alive() and not self.stop_event.is_set():
+                server_thread.join(1)
                 ## Only handle input once registered
                 if self.is_registered:
                     user_input = input(">>> ")
-                    message = self.encode_message("message", user_input)
-                    try:
-                        sock.sendto(message, server_destination)
-                    except socket.error as e:
-                        raise ClientError(f"UDP socket error: {e}")
+                    self.send_message(sock, user_input)
 
         except ClientError:
             # Prevent exceptions when quickly spamming `^C`
             signal.signal(signal.SIGINT, lambda s, f: None)
+
+    def deregister(self, sock):
+        """Sends deregistration request to server."""
+        retries = 0
+        while self.is_registered and retries <= 5:  ## Wait for ack 5x 500ms each
+            # handle retry
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            deregistration_message = self.encode_message("deregistration")
+            sock.sendto(deregistration_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+                retries += 1
+
+        if self.is_registered:
+            logging.info("[Server not responding]")
+            logging.info("[Exiting]")
+            # @todo what if we had custom error for "close" where error
+            # contains message and exit code (e.g. Exiting code 1, or offline bye code 0)
+            # we need to end thread here
 
     def register(self, sock):
         """Send initial registration message to server. If ack'ed log and continue."""
@@ -107,4 +196,4 @@ class Client:
                 # print("listening")
                 data, (sender_ip, sender_port) = read_socket.recvfrom(4096)
                 message = self.decode_message(data)
-                self.handle_request(sender_ip, message)
+                self.handle_request(read_socket, sender_ip, message)

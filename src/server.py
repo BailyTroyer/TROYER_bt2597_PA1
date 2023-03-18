@@ -50,19 +50,44 @@ class Server:
         name = metadata.get("name")
         # @todo what happens if name already exists? We HAVE to cleanup old connection names
         self.connections[name] = {**metadata, "sender_ip": sender_ip}
-        logging.info(f"Server table updated.")
+        logging.info(f"Server table updated. {self.connections}")
+        self.dispatch_connections_change(sock)
+
+    def remove_client(self, metadata, sender_ip, sock):
+        """Removes client from connection map & dispatches change to all others."""
+        name = metadata.get("name")
+        # @todo what happens if name already exists? We HAVE to cleanup old connection names
+        # @todo we prob shouldn't delete, but mark as offline (maybe offline map)
+        del self.connections[name]
+        logging.info(f"Server table updated. {self.connections}")
         self.dispatch_connections_change(sock)
 
     def handle_request(self, sock, sender_ip, payload):
         """Handles different request types (e.g. registration)."""
         if payload.get("type", "") == "registration":
             ## Send back registration ack
+
+            metadata = payload.get("metadata")
+            name = metadata.get("name")
+            client_port = metadata.get("client_port")
+
+            if name in self.connections:
+                ## We don't allow duplicate names in table
+                error_payload = {"message": f"`{name}` already exists!"}
+                message = self.encode_message("registration_error", error_payload)
+                sock.sendto(message, (sender_ip, client_port))
+            else:
+                message = self.encode_message("registration_confirmation")
+                sock.sendto(message, (sender_ip, client_port))
+                self.new_client(metadata, sender_ip, sock)
+        elif payload.get("type", "") == "deregistration":
+            ## Send back deregistration ack
             metadata = payload.get("metadata")
             client_port = metadata.get("client_port")
-            message = self.encode_message("registration_confirmation")
+            message = self.encode_message("deregistration_confirmation")
             sock.sendto(message, (sender_ip, client_port))
             ## Update table
-            self.new_client(metadata, sender_ip, sock)
+            self.remove_client(metadata, sender_ip, sock)
         else:
             print("got another request: ", sender_ip, payload)
 
