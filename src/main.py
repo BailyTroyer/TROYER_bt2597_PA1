@@ -1,8 +1,8 @@
 import re
 import sys
 
-from client import Client
-from server import Server
+from client import Client, ClientError
+from server import Server, ServerError
 
 
 help_message = """ChatApp allows you to spinup a client and server for UDP based chatting.
@@ -90,8 +90,8 @@ def parse_client_mode(args):
     return {
         "name": name,
         "server_ip": server_ip,
-        "server_port": server_port,
-        "client_port": client_port,
+        "server_port": int(server_port),
+        "client_port": int(client_port),
     }
 
 
@@ -106,7 +106,7 @@ def parse_server_mode(args):
     port = args[0]
     if not valid_port(port):
         raise InvalidArgException(f"Invalid <port>: {port}; Must be within 1024-65535")
-    return {"port": port}
+    return {"port": int(port)}
 
 
 def parse_mode_and_go():
@@ -137,8 +137,17 @@ if __name__ == "__main__":
     try:
         parse_mode_and_go()
     except InvalidArgException as e:
-        print(e)
+        print("Invalid arg: ", e)
+        sys.exit(1)
+    except ClientError as e:
+        print("Client error: ", e)
+        sys.exit(1)
+    except ServerError as e:
+        print("server error: ", e)
         sys.exit(1)
     except KeyboardInterrupt:
         print("exiting...")
+        sys.exit(1)
+    except Exception as e:
+        print("Unknown error: ", e)
         sys.exit(1)
