@@ -2,6 +2,7 @@ import logging
 import socket
 import select
 import json
+from operator import itemgetter
 
 logging.basicConfig(level=logging.DEBUG, format=">>> [%(message)s]")
 
@@ -16,6 +17,7 @@ class Server:
     def __init__(self, opts):
         """{port}"""
         self.opts = opts
+        self.connections = {}
 
     def create_sock(self):
         """Create a socket."""
@@ -24,13 +26,45 @@ class Server:
         except socket.error as e:
             raise ServerError(f"UDP server error when creating socket: {e}")
 
-    def encode_message(self, message):
+    def encode_message(self, type, payload=None):
         """Convert plaintext user input to serialized message 'packet'."""
-        return json.dumps({"message": message}).encode("utf-8")
+        metadata = {**self.opts}
+        message = {"type": type, "payload": payload, "metadata": metadata}
+        return json.dumps(message).encode("utf-8")
 
     def decode_message(self, message):
         """Convert bytes to deserialized JSON."""
         return json.loads(message.decode("utf-8"))
+
+    def dispatch_connections_change(self, sock):
+        """For all connections, send state change."""
+
+        for name, metadata in self.connections.items():
+            ## SEND MESSAGE
+            client_port, sender_ip = itemgetter("client_port", "sender_ip")(metadata)
+            message = self.encode_message("state_change", self.connections)
+            sock.sendto(message, (sender_ip, client_port))
+
+    def new_client(self, metadata, sender_ip, sock):
+        """Adds new client metadata to connections map & dispatches change to all others."""
+        name = metadata.get("name")
+        # @todo what happens if name already exists? We HAVE to cleanup old connection names
+        self.connections[name] = {**metadata, "sender_ip": sender_ip}
+        logging.info(f"Server table updated.")
+        self.dispatch_connections_change(sock)
+
+    def handle_request(self, sock, sender_ip, payload):
+        """Handles different request types (e.g. registration)."""
+        if payload.get("type", "") == "registration":
+            ## Send back registration ack
+            metadata = payload.get("metadata")
+            client_port = metadata.get("client_port")
+            message = self.encode_message("registration_confirmation")
+            sock.sendto(message, (sender_ip, client_port))
+            ## Update table
+            self.new_client(metadata, sender_ip, sock)
+        else:
+            print("got another request: ", sender_ip, payload)
 
     def listen(self):
         """Listens on specified `port` opt for messages from downstream clients."""
@@ -42,7 +76,8 @@ class Server:
             try:
                 readables, writables, errors = select.select([sock], [], [], 1)
                 for read_socket in readables:
-                    data, addr = read_socket.recvfrom(4096)
-                    print(addr, self.decode_message(data))
+                    data, (sender_ip, sender_port) = read_socket.recvfrom(4096)
+                    message = self.decode_message(data)
+                    self.handle_request(read_socket, sender_ip, message)
             except socket.error as e:
                 raise ServerError(f"UDP server error when parsing message: {e}")

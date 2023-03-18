@@ -19,10 +19,14 @@ class Client:
     def __init__(self, opts):
         """{name,server_ip,server_port,client_port}"""
         self.opts = opts
+        self.connections = {}
+        self.is_registered = False
 
-    def encode_message(self, message):
+    def encode_message(self, type, payload=None):
         """Convert plaintext user input to serialized message 'packet'."""
-        return json.dumps({"message": message}).encode("utf-8")
+        metadata = {**self.opts}
+        message = {"type": type, "payload": payload, "metadata": metadata}
+        return json.dumps(message).encode("utf-8")
 
     def decode_message(self, message):
         """Convert bytes to deserialized JSON."""
@@ -41,6 +45,15 @@ class Client:
         self.stop_event.set()
         raise ClientError(f"Client aborted... {signum}")
 
+    def handle_request(self, sender_ip, payload):
+        """Handle different request types (e.g. registration_confirmation)."""
+        if payload.get("type", "") == "registration_confirmation":
+            logging.info(f"Welcome, You are registered.")
+            self.is_registered = True
+        elif payload.get("type", "") == "state_change":
+            self.connections = payload.get("payload")
+            logging.info(f"Client table updated.")
+
     def start(self):
         """Start both the user input listener and server event listener."""
         try:
@@ -55,22 +68,32 @@ class Client:
             server_destination = (self.opts["server_ip"], self.opts["server_port"])
 
             while server_thread.is_alive() and not self.stop_event.is_set():
-                user_input = input(">>> ")
-                message = self.encode_message(user_input)
-                print("message: ", message)
-                try:
-                    sock.sendto(message, server_destination)
-                except socket.error as e:
-                    raise ClientError(f"UDP socket error: {e}")
+                ## Only handle input once registered
+                if self.is_registered:
+                    user_input = input(">>> ")
+                    message = self.encode_message("message", user_input)
+                    try:
+                        sock.sendto(message, server_destination)
+                    except socket.error as e:
+                        raise ClientError(f"UDP socket error: {e}")
 
         except ClientError:
             # Prevent exceptions when quickly spamming `^C`
             signal.signal(signal.SIGINT, lambda s, f: None)
 
+    def register(self, sock):
+        """Send initial registration message to server. If ack'ed log and continue."""
+        server_destination = (self.opts["server_ip"], self.opts["server_port"])
+        registration_message = self.encode_message("registration")
+        sock.sendto(registration_message, server_destination)
+
     def server_listen(self, stop_event):
         """Listens on specified `client_port` for messages from server."""
         sock = self.create_sock()
         sock.bind(("", self.opts["client_port"]))
+
+        # register after we start listening on port
+        self.register(sock)
 
         while True:
             # Listen for kill events
@@ -81,6 +104,7 @@ class Client:
 
             readables, writables, errors = select.select([sock], [], [], 1)
             for read_socket in readables:
-                print("listening")
-                data, addr = read_socket.recvfrom(4096)
-                print(addr, self.decode_message(data))
+                # print("listening")
+                data, (sender_ip, sender_port) = read_socket.recvfrom(4096)
+                message = self.decode_message(data)
+                self.handle_request(sender_ip, message)
