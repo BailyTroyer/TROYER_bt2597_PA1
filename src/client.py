@@ -74,6 +74,13 @@ class Client:
             group_name = payload.get("payload")
             self.waiting_for_ack = False
             logger.info(payload.get("payload", {}).get("message", ""))
+        elif request_type == "list_groups_ack":
+            groups = payload.get("payload", {}).get("groups", [])
+            self.waiting_for_ack = False
+            logger.info("Available group chats:")
+            for group in groups:
+                # @todo not all messages should be wrapped in []
+                logger.info(group)
         elif request_type == "message":
             sender_name = payload.get("metadata", {}).get("name")
             message = payload.get("payload", "")
@@ -104,6 +111,23 @@ class Client:
             sock.sendto(message, client_destination)
         except socket.error as e:
             raise ClientError(f"UDP socket error: {e}")
+
+    def list_groups(self, sock):
+        """Sends list_group command to server."""
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            registration_message = self.encode_message("list_groups")
+            sock.sendto(registration_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
 
     def create_group(self, sock, group_name):
         """Sends create-group command to server."""
@@ -153,6 +177,8 @@ class Client:
         elif re.match("create_group (.*)", user_input):
             group_name = user_input.split(" ")[1]
             self.create_group(sock, group_name)
+        elif re.match("list_groups", user_input):
+            self.list_groups(sock)
         else:
             logger.info(f"Unknown command `{user_input}`.")
 

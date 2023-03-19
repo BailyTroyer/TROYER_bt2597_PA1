@@ -107,6 +107,12 @@ class Server:
                 )
                 message = self.encode_message("create_group_ack", group_name)
                 sock.sendto(message, (sender_ip, client_port))
+        elif request_type == "list_groups":
+            metadata = payload.get("metadata")
+            client_port = metadata.get("client_port")
+            groups = list(self.groups.keys())
+            message = self.encode_message("list_groups_ack", {"groups": groups})
+            sock.sendto(message, (sender_ip, client_port))
         else:
             print("got another request: ", sender_ip, payload)
 

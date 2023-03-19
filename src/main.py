@@ -154,5 +154,5 @@ if __name__ == "__main__":
         sys.exit(1)
     except Exception as e:
         print()
-        logger.info("Unknown error {e}.")
+        logger.info(f"Unknown error {e}.")
         sys.exit(1)
