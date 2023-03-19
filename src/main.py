@@ -3,6 +3,7 @@ import sys
 
 from client import Client, ClientError
 from server import Server, ServerError
+from log import logger
 
 
 help_message = """ChatApp allows you to spinup a client and server for UDP based chatting.
@@ -140,14 +141,18 @@ if __name__ == "__main__":
         print("Invalid arg: ", e)
         sys.exit(1)
     except ClientError as e:
-        print("Client error: ", e)
+        print()
+        logger.info("Client error {e}.")
         sys.exit(1)
     except ServerError as e:
-        print("server error: ", e)
+        print()
+        logger.info("Server error {e}.")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("exiting...")
+        print()
+        logger.info("Quitting.")
         sys.exit(1)
     except Exception as e:
-        print("Unknown error: ", e)
+        print()
+        logger.info("Unknown error {e}.")
         sys.exit(1)

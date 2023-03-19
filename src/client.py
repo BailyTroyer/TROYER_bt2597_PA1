@@ -1,4 +1,3 @@
-import logging
 import re
 import time
 import socket
@@ -7,7 +6,7 @@ from threading import Thread, Event
 import signal
 import select
 
-logging.basicConfig(level=logging.DEBUG, format=">>> [%(message)s]")
+from log import logger
 
 
 class ClientError(Exception):
@@ -51,18 +50,18 @@ class Client:
     def handle_request(self, sock, sender_ip, payload):
         """Handle different request types (e.g. registration_confirmation)."""
         if payload.get("type", "") == "registration_confirmation":
-            logging.info(f"Welcome, You are registered.")
+            logger.info(f"Welcome, You are registered.")
             self.is_registered = True
         elif payload.get("type", "") == "registration_error":
-            logging.info(payload.get("payload", {}).get("message", ""))
-            # @todo exit here somehow
+            logger.info(payload.get("payload", {}).get("message", ""))
+            self.stop_event.set()
         elif payload.get("type", "") == "state_change":
             self.connections = payload.get("payload")
-            logging.info(f"Client table updated.")
+            logger.info(f"Client table updated.")
         elif payload.get("type", "") == "deregistration_confirmation":
             self.is_registered = False
-            logging.info("You are Offline. Bye.")
-            # @todo handle closing this thread better
+            logger.info("You are Offline. Bye.")
+            self.stop_event.set()
         elif payload.get("type", "") == "message":
             sender_name = payload.get("metadata", {}).get("name")
             message = payload.get("payload", "")
@@ -81,7 +80,7 @@ class Client:
         message = self.encode_message("message", user_input)
         # @todo what happens if they DON'T EXIST IN TABLE
         if recipient_name not in self.connections:
-            logging.info(f"Unable to send to non-existent {recipient_name}.")
+            logger.info(f"Unable to send to non-existent {recipient_name}.")
             return
 
         recipient_metadata = self.connections.get(recipient_name, {})
@@ -125,7 +124,7 @@ class Client:
             # Send to recipient, wait for ack, send ack back
             # if timeout 500ms -> notify server to upate table
         else:
-            logging.info(f"Unknown command `{user_input}`.")
+            logger.info(f"Unknown command `{user_input}`.")
 
     def start(self):
         """Start both the user input listener and server event listener."""
@@ -154,21 +153,17 @@ class Client:
         """Sends deregistration request to server."""
         retries = 0
         while self.is_registered and retries <= 5:  ## Wait for ack 5x 500ms each
-            # handle retry
             server_destination = (self.opts["server_ip"], self.opts["server_port"])
             deregistration_message = self.encode_message("deregistration")
             sock.sendto(deregistration_message, server_destination)
             # We don't want to sleep on the 5th time we just exit
             if retries <= 4:
                 time.sleep(self.delay)
-                retries += 1
-
+            retries += 1
         if self.is_registered:
-            logging.info("[Server not responding]")
-            logging.info("[Exiting]")
-            # @todo what if we had custom error for "close" where error
-            # contains message and exit code (e.g. Exiting code 1, or offline bye code 0)
-            # we need to end thread here
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
 
     def register(self, sock):
         """Send initial registration message to server. If ack'ed log and continue."""
@@ -187,8 +182,7 @@ class Client:
         while True:
             # Listen for kill events
             if stop_event.is_set():
-                print()  # this adds a nice newline when `^C` is entered
-                logging.info(f"stopping client-server listener")
+                logger.info(f"stopping client-server listener")
                 break
 
             readables, writables, errors = select.select([sock], [], [], 1)

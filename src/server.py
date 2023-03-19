@@ -1,10 +1,9 @@
-import logging
 import socket
 import select
 import json
 from operator import itemgetter
 
-logging.basicConfig(level=logging.DEBUG, format=">>> [%(message)s]")
+from log import logger
 
 
 class ServerError(Exception):
@@ -50,7 +49,7 @@ class Server:
         name = metadata.get("name")
         # @todo what happens if name already exists? We HAVE to cleanup old connection names
         self.connections[name] = {**metadata, "sender_ip": sender_ip}
-        logging.info(f"Server table updated. {self.connections}")
+        logger.info(f"Server table updated. {self.connections}")
         self.dispatch_connections_change(sock)
 
     def remove_client(self, metadata, sender_ip, sock):
@@ -59,7 +58,7 @@ class Server:
         # @todo what happens if name already exists? We HAVE to cleanup old connection names
         # @todo we prob shouldn't delete, but mark as offline (maybe offline map)
         del self.connections[name]
-        logging.info(f"Server table updated. {self.connections}")
+        logger.info(f"Server table updated. {self.connections}")
         self.dispatch_connections_change(sock)
 
     def handle_request(self, sock, sender_ip, payload):
@@ -96,7 +95,7 @@ class Server:
         sock = self.create_sock()
         sock.bind(("", self.opts["port"]))
 
-        logging.info(f"Server started on {self.opts['port']}")
+        logger.warning(f"Server started on {self.opts['port']}")
         while True:
             try:
                 readables, writables, errors = select.select([sock], [], [], 1)
