@@ -23,6 +23,7 @@ class Client:
         self.is_registered = False
         self.delay = 500 / 1000  # 500ms (500ms/1000ms = 0.5s)
         self.is_in_groupchat = False
+        self.waiting_for_ack = False
 
     def encode_message(self, type, payload=None):
         """Convert plaintext user input to serialized message 'packet'."""
@@ -49,20 +50,31 @@ class Client:
 
     def handle_request(self, sock, sender_ip, payload):
         """Handle different request types (e.g. registration_confirmation)."""
-        if payload.get("type", "") == "registration_confirmation":
+        request_type = payload.get("type", "")
+
+        if request_type == "registration_confirmation":
             logger.info(f"Welcome, You are registered.")
             self.is_registered = True
-        elif payload.get("type", "") == "registration_error":
+        elif request_type == "registration_error":
+            # @todo clean this up, maybe payload contains error message
             logger.info(payload.get("payload", {}).get("message", ""))
             self.stop_event.set()
-        elif payload.get("type", "") == "state_change":
+        elif request_type == "state_change":
             self.connections = payload.get("payload")
             logger.info(f"Client table updated.")
-        elif payload.get("type", "") == "deregistration_confirmation":
+        elif request_type == "deregistration_confirmation":
             self.is_registered = False
             logger.info("You are Offline. Bye.")
             self.stop_event.set()
-        elif payload.get("type", "") == "message":
+        elif request_type == "create_group_ack":
+            group_name = payload.get("payload")
+            self.waiting_for_ack = False
+            logger.info(f"Group {group_name} created by Server.")
+        elif request_type == "create_group_error":
+            group_name = payload.get("payload")
+            self.waiting_for_ack = False
+            logger.info(payload.get("payload", {}).get("message", ""))
+        elif request_type == "message":
             sender_name = payload.get("metadata", {}).get("name")
             message = payload.get("payload", "")
             if not self.is_in_groupchat:
@@ -93,6 +105,23 @@ class Client:
         except socket.error as e:
             raise ClientError(f"UDP socket error: {e}")
 
+    def create_group(self, sock, group_name):
+        """Sends create-group command to server."""
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            registration_message = self.encode_message("create_group", group_name)
+            sock.sendto(registration_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
+
     def send_dm_ack(self, sock, recipient_name):
         """Sends an ACK to the sender of an incoming DM."""
         recipient_metadata = self.connections.get(recipient_name, {})
@@ -113,16 +142,17 @@ class Client:
             name = user_input.split(" ")[1]
             self.deregister(sock)
         elif re.match("send (.*) (.*)", user_input):
-            print("USER INPUT: ", user_input)
             name = user_input.split(" ")[1]
             message = " ".join(user_input.split(" ")[2:])
             print("sending this: ", message)
             self.send_dm(sock, name, message)
-
             # Determine if private message (regex match `send <name> <message>`)
             # Lookup IP,port for recipient `<name>`
             # Send to recipient, wait for ack, send ack back
             # if timeout 500ms -> notify server to upate table
+        elif re.match("create_group (.*)", user_input):
+            group_name = user_input.split(" ")[1]
+            self.create_group(sock, group_name)
         else:
             logger.info(f"Unknown command `{user_input}`.")
 

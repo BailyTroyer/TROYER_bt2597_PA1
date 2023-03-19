@@ -17,6 +17,7 @@ class Server:
         """{port}"""
         self.opts = opts
         self.connections = {}
+        self.groups = {}
 
     def create_sock(self):
         """Create a socket."""
@@ -63,9 +64,9 @@ class Server:
 
     def handle_request(self, sock, sender_ip, payload):
         """Handles different request types (e.g. registration)."""
-        if payload.get("type", "") == "registration":
+        request_type = payload.get("type", "")
+        if request_type == "registration":
             ## Send back registration ack
-
             metadata = payload.get("metadata")
             name = metadata.get("name")
             client_port = metadata.get("client_port")
@@ -79,7 +80,7 @@ class Server:
                 message = self.encode_message("registration_confirmation")
                 sock.sendto(message, (sender_ip, client_port))
                 self.new_client(metadata, sender_ip, sock)
-        elif payload.get("type", "") == "deregistration":
+        elif request_type == "deregistration":
             ## Send back deregistration ack
             metadata = payload.get("metadata")
             client_port = metadata.get("client_port")
@@ -87,6 +88,25 @@ class Server:
             sock.sendto(message, (sender_ip, client_port))
             ## Update table
             self.remove_client(metadata, sender_ip, sock)
+        elif request_type == "create_group":
+            metadata = payload.get("metadata")
+            requester_name = metadata.get("name")
+            group_name = payload.get("payload")
+            client_port = metadata.get("client_port")
+            if group_name in self.groups.keys():
+                logger.warning(
+                    f"Client {requester_name} creating group `{group_name}` failed, group already exists"
+                )
+                error_payload = {"message": f"Group `{group_name}` already exists."}
+                message = self.encode_message("create_group_error", error_payload)
+                sock.sendto(message, (sender_ip, client_port))
+            else:
+                self.groups[group_name] = {}
+                logger.info(
+                    f"Client {requester_name} created group `{group_name}` successfully!"
+                )
+                message = self.encode_message("create_group_ack", group_name)
+                sock.sendto(message, (sender_ip, client_port))
         else:
             print("got another request: ", sender_ip, payload)
 
