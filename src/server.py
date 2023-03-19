@@ -101,7 +101,7 @@ class Server:
                 message = self.encode_message("create_group_error", error_payload)
                 sock.sendto(message, (sender_ip, client_port))
             else:
-                self.groups[group_name] = {}
+                self.groups[group_name] = []
                 logger.info(
                     f"Client {requester_name} created group `{group_name}` successfully!"
                 )
@@ -113,6 +113,23 @@ class Server:
             groups = list(self.groups.keys())
             message = self.encode_message("list_groups_ack", {"groups": groups})
             sock.sendto(message, (sender_ip, client_port))
+        elif request_type == "join_group":
+            metadata = payload.get("metadata")
+            requester_name = metadata.get("name")
+            group_name = payload.get("payload")
+            client_port = metadata.get("client_port")
+            if group_name not in self.groups.keys():
+                logger.warning(
+                    f"Client {requester_name} joining group `{group_name}` failed, group does not exist"
+                )
+                error_payload = {"message": f"Group `{group_name}` does not exist."}
+                message = self.encode_message("join_group_error", error_payload)
+                sock.sendto(message, (sender_ip, client_port))
+            else:
+                self.groups[group_name].append(requester_name)
+                logger.info(f"Client {requester_name} joined group `{group_name}`")
+                message = self.encode_message("join_group_ack", group_name)
+                sock.sendto(message, (sender_ip, client_port))
         else:
             print("got another request: ", sender_ip, payload)
 
