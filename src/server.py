@@ -55,6 +55,7 @@ class Server:
 
     def remove_client(self, metadata, sender_ip, sock):
         """Removes client from connection map & dispatches change to all others."""
+        # @todo this isn't generic enough for both dereg and `client_offline`
         name = metadata.get("name")
         # @todo what happens if name already exists? We HAVE to cleanup old connection names
         # @todo we prob shouldn't delete, but mark as offline (maybe offline map)
@@ -130,6 +131,19 @@ class Server:
                 logger.info(f"Client {requester_name} joined group `{group_name}`")
                 message = self.encode_message("join_group_ack", group_name)
                 sock.sendto(message, (sender_ip, client_port))
+        elif request_type == "client_offline":
+            ## Send back deregistration ack
+            offline_client_name = payload.get("payload")
+            # deregister auto based on disconnected state sending DM between clients
+            del self.connections[offline_client_name]
+            logger.info(f"Server table updated. {self.connections}")
+            self.dispatch_connections_change(sock)
+            metadata = payload.get("metadata")
+            client_port = metadata.get("client_port")
+            # send dereg ack to client
+            message = self.encode_message("client_offline_ack", offline_client_name)
+            sock.sendto(message, (sender_ip, client_port))
+
         else:
             print("got another request: ", sender_ip, payload)
 

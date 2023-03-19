@@ -22,7 +22,7 @@ class Client:
         self.connections = {}
         self.is_registered = False
         self.delay = 500 / 1000  # 500ms (500ms/1000ms = 0.5s)
-        self.is_in_groupchat = False
+        self.active_group = None
         self.waiting_for_ack = False
 
     def encode_message(self, type, payload=None):
@@ -77,7 +77,7 @@ class Client:
         elif request_type == "join_group_ack":
             group_name = payload.get("payload")
             self.waiting_for_ack = False
-            self.is_in_groupchat = True
+            self.active_group = group_name
             logger.info(f"Entered group {group_name} successfully!")
         elif request_type == "join_group_error":
             group_name = payload.get("payload")
@@ -93,13 +93,23 @@ class Client:
         elif request_type == "message":
             sender_name = payload.get("metadata", {}).get("name")
             message = payload.get("payload", "")
-            if not self.is_in_groupchat:
+            if not self.active_group:
                 print(f"{sender_name}: {message}")
                 # send ack back to user
                 self.send_dm_ack(sock, sender_name)
             else:
                 ## @todo enqueue and then send once out of groupchat
                 print("@todo")
+        elif request_type == "message_ack":
+            self.waiting_for_ack = False
+            recipient_name = payload.get("payload", "")
+            logger.info(f"Message received by {recipient_name}")
+        elif request_type == "client_offline_ack":
+            self.waiting_for_ack = False
+            offline_client_name = payload.get("payload", "")
+            logger.info(
+                f"Auto-deregistered {offline_client_name} since they were offline."
+            )
         else:
             print(f"got unknown message: {payload}")
 
@@ -116,10 +126,18 @@ class Client:
         client_ip = "0.0.0.0"  # @todo we need to track this on client INIT
         client_destination = (client_ip, client_port)
 
-        try:
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
             sock.sendto(message, client_destination)
-        except socket.error as e:
-            raise ClientError(f"UDP socket error: {e}")
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info(f"No ACK from {recipient_name}, message not delivered")
+            # We still need to see if server is online, otherwise that means OUR client is offline
+            self.notify_server_client_offline(sock, recipient_name)
 
     def list_groups(self, sock):
         """Sends list_group command to server."""
@@ -144,8 +162,25 @@ class Client:
         self.waiting_for_ack = True
         while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
             server_destination = (self.opts["server_ip"], self.opts["server_port"])
-            registration_message = self.encode_message("create_group", group_name)
-            sock.sendto(registration_message, server_destination)
+            create_group_message = self.encode_message("create_group", group_name)
+            sock.sendto(create_group_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
+
+    def notify_server_client_offline(self, sock, client_name):
+        """Notifies server a client didn't respond."""
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            offline_message = self.encode_message("client_offline", client_name)
+            sock.sendto(offline_message, server_destination)
             # We don't want to sleep on the 5th time we just exit
             if retries <= 4:
                 time.sleep(self.delay)
@@ -178,7 +213,7 @@ class Client:
         client_port = recipient_metadata.get("client_port")
         client_ip = "0.0.0.0"  # @todo we need to track this on client INIT
         client_destination = (client_ip, client_port)
-        message = self.encode_message("message_ack")
+        message = self.encode_message("message_ack", self.opts["name"])
         try:
             sock.sendto(message, client_destination)
         except socket.error as e:
@@ -194,12 +229,7 @@ class Client:
         elif re.match("send (.*) (.*)", user_input):
             name = user_input.split(" ")[1]
             message = " ".join(user_input.split(" ")[2:])
-            print("sending this: ", message)
             self.send_dm(sock, name, message)
-            # Determine if private message (regex match `send <name> <message>`)
-            # Lookup IP,port for recipient `<name>`
-            # Send to recipient, wait for ack, send ack back
-            # if timeout 500ms -> notify server to upate table
         elif re.match("create_group (.*)", user_input):
             group_name = user_input.split(" ")[1]
             self.create_group(sock, group_name)
