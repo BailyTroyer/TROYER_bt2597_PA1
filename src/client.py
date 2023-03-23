@@ -24,6 +24,8 @@ class Client:
         self.delay = 500 / 1000  # 500ms (500ms/1000ms = 0.5s)
         self.active_group = None
         self.waiting_for_ack = False
+        self.waiting_for_input = False
+        self.inbox = []
 
     def encode_message(self, type, payload=None):
         """Convert plaintext user input to serialized message 'packet'."""
@@ -48,6 +50,14 @@ class Client:
         self.stop_event.set()
         raise ClientError(f"Client aborted... {signum}")
 
+    def print_inbox(self):
+        """Prints queued direct messages while inside group."""
+        for inbox_message in self.inbox:
+            message = inbox_message.get("message", "")
+            sender = inbox_message.get("sender", "")
+            print(f"{sender}: {message}")
+        self.inbox = []
+
     def handle_request(self, sock, sender_ip, payload):
         """Handle different request types (e.g. registration_confirmation)."""
         request_type = payload.get("type", "")
@@ -61,7 +71,10 @@ class Client:
             self.stop_event.set()
         elif request_type == "state_change":
             self.connections = payload.get("payload")
-            logger.info(f"Client table updated.")
+            show_newline = "\n" if self.waiting_for_input else ""
+            # if show_newline:
+            #     print("")
+            print(f"Client table updated.", flush=True)
         elif request_type == "deregistration_confirmation":
             self.is_registered = False
             logger.info("You are Offline. Bye.")
@@ -98,8 +111,8 @@ class Client:
                 # send ack back to user
                 self.send_dm_ack(sock, sender_name)
             else:
-                ## @todo enqueue and then send once out of groupchat
-                print("@todo")
+                self.send_dm_ack(sock, sender_name)
+                self.inbox.append({"sender": sender_name, "message": message})
         elif request_type == "message_ack":
             self.waiting_for_ack = False
             recipient_name = payload.get("payload", "")
@@ -110,6 +123,28 @@ class Client:
             logger.info(
                 f"Auto-deregistered {offline_client_name} since they were offline."
             )
+        elif request_type == "group_message":
+            message = payload.get("payload", {}).get("message")
+            sender = payload.get("payload", {}).get("sender")
+            print(f">>> ({self.active_group}) Group_Message <{sender}> {message}")
+
+            ## send ack back to server of recieved group_message
+        elif request_type == "members_list":
+            self.waiting_for_ack = False
+            members = payload.get("payload", {}).get("members")
+            print(
+                f">>> ({self.active_group}) Members in the group {self.active_group}:"
+            )
+            for member in members:
+                print(f">>> ({self.active_group}) {member}")
+        elif request_type == "leave_group_ack":
+            self.waiting_for_ack = False
+            logger.info(f"Leave group chat {self.active_group}")
+            self.active_group = None
+            self.print_inbox()
+        elif request_type == "group_message_ack":
+            self.waiting_for_ack = False
+            print(f">>> ({self.active_group}) [Message received by Server.]")
         else:
             print(f"got unknown message: {payload}")
 
@@ -190,6 +225,34 @@ class Client:
             logger.info("Exiting")
             self.stop_event.set()
 
+    # @todo is this OK that we don't retry? I assume so
+    def send_group_message_ack(self, sock):
+        """Sends an ack back to server of recieved group message."""
+        server_destination = (self.opts["server_ip"], self.opts["server_port"])
+        group_message = self.encode_message(
+            "group_message_ack", {"group": self.active_group}
+        )
+        sock.sendto(group_message, server_destination)
+
+    def send_group_message(self, sock, message):
+        """Sends group chat message to server."""
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            group_message = self.encode_message(
+                "group_message", {"message": message, "group": self.active_group}
+            )
+            sock.sendto(group_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
+
     def join_group(self, sock, group_name):
         """Sends join_group command to server."""
         retries = 0
@@ -219,6 +282,44 @@ class Client:
         except socket.error as e:
             raise ClientError(f"UDP socket error: {e}")
 
+    def send_list_group_members(self, sock):
+        """Sends list_members command to server."""
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            group_message = self.encode_message(
+                "list_members", {"group": self.active_group}
+            )
+            sock.sendto(group_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
+
+    def send_leave_group(self, sock):
+        """Sends leave_group command to server."""
+        retries = 0
+        self.waiting_for_ack = True
+        while self.waiting_for_ack and retries <= 5:  ## Wait for ack 5x 500ms each
+            server_destination = (self.opts["server_ip"], self.opts["server_port"])
+            group_message = self.encode_message(
+                "leave_group", {"group": self.active_group}
+            )
+            sock.sendto(group_message, server_destination)
+            # We don't want to sleep on the 5th time we just exit
+            if retries <= 4:
+                time.sleep(self.delay)
+            retries += 1
+        if self.waiting_for_ack:
+            logger.info("Server not responding")
+            logger.info("Exiting")
+            self.stop_event.set()
+
     def send_message(self, sock, user_input):
         """Parses user plaintext and sends to proper destination."""
         ### CHECK IF IN GROUP CHAT, NO DM IF IN GROUPCHAT
@@ -235,10 +336,21 @@ class Client:
             self.create_group(sock, group_name)
         elif re.match("list_groups", user_input):
             self.list_groups(sock)
+        elif re.match("list_members", user_input):
+            # if not in group show err
+            if not self.active_group:
+                logger.info("Invalid command. You need to be in a group first!")
+            else:
+                self.send_list_group_members(sock)
         elif re.match("join_group (.*)", user_input):
             # @todo what if you join a group from another group?
             group_name = user_input.split(" ")[1]
             self.join_group(sock, group_name)
+        elif re.match("send_group (.*)", user_input):
+            message = " ".join(user_input.split(" ")[1:])
+            self.send_group_message(sock, message)
+        elif re.match("leave_group", user_input):
+            self.send_leave_group(sock)
         else:
             logger.info(f"Unknown command `{user_input}`.")
 
@@ -258,7 +370,12 @@ class Client:
                 server_thread.join(1)
                 ## Only handle input once registered
                 if self.is_registered:
-                    user_input = input(">>> ")
+                    in_groupchat_prefix = (
+                        f"({self.active_group}) " if self.active_group else ""
+                    )
+                    self.waiting_for_input = True
+                    user_input = input(f">>> {in_groupchat_prefix}")
+                    self.waiting_for_input = False
                     self.send_message(sock, user_input)
 
         except ClientError:

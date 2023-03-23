@@ -38,7 +38,6 @@ class Server:
 
     def dispatch_connections_change(self, sock):
         """For all connections, send state change."""
-
         for name, metadata in self.connections.items():
             ## SEND MESSAGE
             client_port, sender_ip = itemgetter("client_port", "sender_ip")(metadata)
@@ -62,6 +61,19 @@ class Server:
         del self.connections[name]
         logger.info(f"Server table updated. {self.connections}")
         self.dispatch_connections_change(sock)
+
+    def dispatch_group_message(self, sock, sender_name, group, message):
+        """Dispatches group message to clients in group except sender."""
+        group_clients = self.groups[group]
+        for client in list(filter(lambda user: user != sender_name, group_clients)):
+            client_metadata = self.connections[client]
+            client_port, sender_ip = itemgetter("client_port", "sender_ip")(
+                client_metadata
+            )
+            group_message = self.encode_message(
+                "group_message", {"message": message, "sender": sender_name}
+            )
+            sock.sendto(group_message, (sender_ip, client_port))
 
     def handle_request(self, sock, sender_ip, payload):
         """Handles different request types (e.g. registration)."""
@@ -143,7 +155,52 @@ class Server:
             # send dereg ack to client
             message = self.encode_message("client_offline_ack", offline_client_name)
             sock.sendto(message, (sender_ip, client_port))
+        elif request_type == "group_message":
+            ## send message to all clients within group
+            ## @todo if the ack gets lost does that mean client sends duplicate messages?
+            metadata = payload.get("metadata", {})
+            sender_name = metadata.get("name", "")
+            client_port = metadata.get("client_port")
+            message = payload.get("payload", {}).get("message", "")
+            print("group message payload: ", payload)
+            ## Send ack to sender
+            message_ack = self.encode_message("group_message_ack")
+            sock.sendto(message_ack, (sender_ip, client_port))
+            ## @todo shouldn't this also include the group name?
+            logger.info(f"Client {sender_name} sent group message: {message}")
+            ## Dispatch message
+            group = payload.get("payload", {}).get("group", "")
+            self.dispatch_group_message(sock, sender_name, group, message)
 
+            ### @todo @todo @todo wait for ack from all clients in dispatch
+        elif request_type == "group_message_ack":
+            ## @TODO @TODO if ack not recieved within timeout for user+group mark user as offline
+            ## @BAILY HERE HERE
+            ##
+            ##
+            ##
+            print("@@TODO HANDLE ACK HERE")
+        elif request_type == "list_members":
+            group = payload.get("payload", {}).get("group", "")
+            # get list of users in group
+            group_members = self.groups[group]
+            metadata = payload.get("metadata", {})
+            message_ack = self.encode_message(
+                "members_list", {"members": group_members}
+            )
+            client_port = metadata.get("client_port")
+            sock.sendto(message_ack, (sender_ip, client_port))
+
+        elif request_type == "leave_group":
+            group = payload.get("payload", {}).get("group", "")
+            metadata = payload.get("metadata", {})
+            sender_name = metadata.get("name", "")
+            # remove user from list in group
+            self.groups[group].remove(sender_name)
+            message_ack = self.encode_message("leave_group_ack")
+            client_port = metadata.get("client_port")
+            sock.sendto(message_ack, (sender_ip, client_port))
+            logger.info(f"Client {sender_name} left group {group}")
         else:
             print("got another request: ", sender_ip, payload)
 
