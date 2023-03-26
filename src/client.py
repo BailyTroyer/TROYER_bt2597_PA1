@@ -63,7 +63,7 @@ class Client:
         request_type = payload.get("type", "")
 
         if request_type == "registration_confirmation":
-            logger.info(f"Welcome, You are registered.")
+            logger.info("Welcome, You are registered.")
             self.is_registered = True
         elif request_type == "registration_error":
             # @todo clean this up, maybe payload contains error message
@@ -72,9 +72,10 @@ class Client:
         elif request_type == "state_change":
             self.connections = payload.get("payload")
             show_newline = "\n" if self.waiting_for_input else ""
-            # if show_newline:
-            #     print("")
-            print(f"Client table updated.", flush=True)
+            if show_newline:
+                print("\r>>> [Client table updated.]", end="")
+            else:
+                logger.info("Client table updated.")
         elif request_type == "deregistration_confirmation":
             self.is_registered = False
             logger.info("You are Offline. Bye.")
@@ -127,6 +128,7 @@ class Client:
             message = payload.get("payload", {}).get("message")
             sender = payload.get("payload", {}).get("sender")
             print(f">>> ({self.active_group}) Group_Message <{sender}> {message}")
+            self.send_group_message_ack(sock)
 
             ## send ack back to server of recieved group_message
         elif request_type == "members_list":
