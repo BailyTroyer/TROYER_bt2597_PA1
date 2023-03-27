@@ -24,7 +24,6 @@ class Server:
         ## thus each group chat stops & waits for all acks until taking new messages
         self.outbound_group_ack_lock = Lock()
         self.outbound_group_acks = {}
-        ## @todo make this a class that server and client extend
         self.delay = 500 / 1000  # 500ms (500ms/1000ms = 0.5s)
 
     def create_sock(self):
@@ -57,7 +56,7 @@ class Server:
         name = metadata.get("name")
         # @todo what happens if name already exists? We HAVE to cleanup old connection names
         self.connections[name] = {**metadata, "sender_ip": sender_ip}
-        logger.info(f"Server table updated. {self.connections}")
+        logger.info(f"Server table updated.")
         self.dispatch_connections_change(sock)
 
     def remove_client(self, metadata, sender_ip, sock):
@@ -67,10 +66,8 @@ class Server:
         # @todo what happens if name already exists? We HAVE to cleanup old connection names
         # @todo we prob shouldn't delete, but mark as offline (maybe offline map)
         del self.connections[name]
-
-        ## @todo @todo if we remove from group chat list then we don't know who to check for in ACKs
         ## DON'T TOUCH GROUP CHAT LIST UNTIL ACK IS MISSING AND THEN WE FORCEFULLY REMOVE
-        logger.info(f"Server table updated. {self.connections}")
+        logger.info(f"Server table updated. (removed client)")
         self.dispatch_connections_change(sock)
 
     def dispatch_group_message(self, sock, sender_name, group, message):
@@ -86,16 +83,16 @@ class Server:
             )
             sock.sendto(group_message, (sender_ip, client_port))
 
-    def wait_for_group_acks(self, sender_name, group):
+    def wait_for_group_acks(self, sender_name, group, sock):
         """Waits for ACK from all clients in dispatch list for a group message."""
 
-        with self.outbound_group_ack_lock:
-            print(
-                "waiting for group acks: ", sender_name, group, self.outbound_group_acks
-            )
+        # with self.outbound_group_ack_lock:
+        #     print(
+        #         "waiting for group acks: ", sender_name, group, self.outbound_group_acks
+        #     )
         # we don't want to wait for ack from sender
         expected_acks = list(filter(lambda u: u != sender_name, self.groups[group]))
-        print(f"expected acks: {expected_acks}")
+        # print(f"expected acks: {expected_acks}")
 
         retries = 0
         waiting_for_acks = True
@@ -111,9 +108,17 @@ class Server:
                 time.sleep(self.delay)
             retries += 1
         if waiting_for_acks:
-            logger.info(f"Error; Unacked messages from {list(set())}")
-        else:
-            logger.info(f"got proper acks!")
+            unacked_clients = list(
+                set(expected_acks) - set(self.outbound_group_acks[group])
+            )
+            # logger.info(f"Error; Unacked messages from {unacked_clients}")
+            for unacked_client in unacked_clients:
+                self.groups[group].remove(unacked_client)
+                logger.info(
+                    f"Client {unacked_client} not responsive, removed from group {group}"
+                )
+        # else:
+        #     # logger.info(f"got proper acks!")
 
     def handle_request(self, sock, sender_ip, payload):
         """Handles different request types (e.g. registration)."""
@@ -162,8 +167,14 @@ class Server:
                 sock.sendto(message, (sender_ip, client_port))
         elif request_type == "list_groups":
             metadata = payload.get("metadata")
+            client_name = metadata.get("name")
             client_port = metadata.get("client_port")
             groups = list(self.groups.keys())
+            logger.info(
+                f"Client {client_name} requested listing groups, current groups:"
+            )
+            for group in groups:
+                logger.info(group)
             message = self.encode_message("list_groups_ack", {"groups": groups})
             sock.sendto(message, (sender_ip, client_port))
         elif request_type == "join_group":
@@ -188,7 +199,7 @@ class Server:
             offline_client_name = payload.get("payload")
             # deregister auto based on disconnected state sending DM between clients
             del self.connections[offline_client_name]
-            logger.info(f"Server table updated. {self.connections}")
+            logger.info(f"Server table updated.")
             self.dispatch_connections_change(sock)
             metadata = payload.get("metadata")
             client_port = metadata.get("client_port")
@@ -202,11 +213,9 @@ class Server:
             sender_name = metadata.get("name", "")
             client_port = metadata.get("client_port")
             message = payload.get("payload", {}).get("message", "")
-            print("group message payload: ", payload)
             ## Send ack to sender
             message_ack = self.encode_message("group_message_ack")
             sock.sendto(message_ack, (sender_ip, client_port))
-            ## @todo shouldn't this also include the group name?
             logger.info(f"Client {sender_name} sent group message: {message}")
             ## Dispatch message
             group = payload.get("payload", {}).get("group", "")
@@ -217,23 +226,12 @@ class Server:
 
             self.dispatch_group_message(sock, sender_name, group, message)
 
-            print("spawning wait for group acks")
             wait_for_acks_thread = Thread(
                 target=self.wait_for_group_acks,
-                args=(
-                    sender_name,
-                    group,
-                ),
+                args=(sender_name, group, sock),
             )
             wait_for_acks_thread.start()
-            print("finished spwaning")
-
-            ### @todo @todo @todo wait for ack from all clients in dispatch
         elif request_type == "group_message_ack":
-            ## @TODO @TODO if ack not recieved within timeout for user+group mark user as offline
-            ## @BAILY HERE HERE
-
-            print("@@TODO HANDLE ACK HERE")
             group = payload.get("payload", {}).get("group", "")
             metadata = payload.get("metadata", {})
             sender_name = metadata.get("name", "")
@@ -243,12 +241,18 @@ class Server:
 
         elif request_type == "list_members":
             group = payload.get("payload", {}).get("group", "")
+            client_name = payload.get("metadata", {}).get("name", "")
             # get list of users in group
             group_members = self.groups[group]
             metadata = payload.get("metadata", {})
             message_ack = self.encode_message(
                 "members_list", {"members": group_members}
             )
+            logger.info(
+                f"Client {client_name} requested listing members of group {group}"
+            )
+            for members in group_members:
+                logger.info(members)
             client_port = metadata.get("client_port")
             sock.sendto(message_ack, (sender_ip, client_port))
 

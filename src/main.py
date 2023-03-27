@@ -13,9 +13,7 @@ Commands:
     -s      Starts server mode at specified port
 
 Usage:
-    ChatApp [flags] [options]
-
-Use "ChatApp <command> --help" for more information about a given command"""
+    ChatApp [flags] [options]"""
 
 client_help_message = """Starts client with required server information.
 
@@ -138,7 +136,7 @@ if __name__ == "__main__":
     try:
         parse_mode_and_go()
     except InvalidArgException as e:
-        print("Invalid arg: ", e)
+        print(e)
         sys.exit(1)
     except ClientError as e:
         print()
@@ -153,6 +151,5 @@ if __name__ == "__main__":
         logger.info("Quitting.")
         sys.exit(1)
     except Exception as e:
-        print()
         logger.info(f"Unknown error {e}.")
         sys.exit(1)
