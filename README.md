@@ -302,6 +302,44 @@ $ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> 
 ```
 
+#### Sends with server down
+
+Start server & clients then stop server. Clients can still communicate
+**server:**
+
+```sh
+$ python src/ChatApp.py -s 5000
+>>> [Server started on 5000]
+>>> [Server table updated.]
+>>> [Server table updated.]
+^C
+>>> [Quitting.]
+```
+
+**client1:**
+
+```sh
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+send client2 hehe hi
+>>> [Message received by client2]
+>>> >>> [client2: noice]
+```
+
+**client2:**
+
+```sh
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [client: hehe hi]
+send client noice
+>>> [Message received by client]
+>>> 
+```
+
 ### 2.3 De-registration
 
 #### Valid client name
@@ -1043,6 +1081,40 @@ $ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 
 ### Edge Cases
 
+#### Deregging someone else 
+
+Lol you can't do this. It tells you so :D
+
+**server:**
+
+```sh
+$ python src/ChatApp.py -s 5000
+>>> [Server started on 5000]
+>>> [Server table updated.]
+>>> [Server table updated.]
+```
+
+**client:**
+
+```sh
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+dereg client2
+>>> [You can only deregister yourself.]
+>>> 
+```
+
+**client2:**
+
+```sh
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> 
+```
+
 #### Sending messages to yourself
 
 In this case there's no issue if you want to send messages to yourself. Not sure why you'd want to, but we don't filter messages out.
@@ -1092,13 +1164,198 @@ $ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [stopping client-server listener]
 ```
 
+### Given Cases
+
+#### Test case 1
+
+**server:**
+
+```sh
+$ python src/ChatApp.py -s 5000
+>>> [Server started on 5000]
+>>> [Server table updated.]
+>>> [Server table updated.]
+>>> [Server table updated.]
+```
+
+**client x:**
+
+```sh
+$ python src/ChatApp.py -c x 0.0.0.0 5000 5555
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+>>> [Client table updated.]
+send y hi there y
+>>> [Message received by y]
+>>> >>> [z: hi there x]
+>>> [y: hi there x]
+send z hi there z
+>>> [Message received by z]
+>>> 
+```
+
+**client y:**
+
+```sh
+$ python src/ChatApp.py -c y 0.0.0.0 5000 5556
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+>>> [x: hi there y]
+send z hi there z
+>>> [Message received by z]
+>>> >>> [z: hi there y]
+send x hi there x
+>>> [Message received by x]
+>>> 
+```
+
+**client z:**
+
+```sh
+$ python src/ChatApp.py -c z 0.0.0.0 5000 5557
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [y: hi there z]
+send x hi there x
+>>> [Message received by x]
+>>> send y hi there y
+>>> [Message received by y]
+>>> >>> [x: hi there z]
+
+```
+
+#### Test case 2
+
+**server:**
+
+```sh
+$ python src/ChatApp.py -s 5000
+>>> [Server started on 5000]
+>>> [Server table updated.]
+>>> [Server table updated.]
+>>> [Server table updated. (removed client)]
+^C
+>>> [Quitting.]
+```
+
+**client x:**
+
+```sh
+$ python src/ChatApp.py -c x 0.0.0.0 5000 5555
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+>>> [Client table updated.]
+send y are you there??  
+>>> [Unable to send to non-existent y.]
+>>> 
+```
+
+**client y:**
+
+```sh
+$ python src/ChatApp.py -c y 0.0.0.0 5000 5556
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> dereg y
+>>> [You are Offline. Bye.]
+>>> [stopping client-server listener]
+```
+
+### Test Case 3
+
+> To be clear, the logic works but the formatting makes it look extra ugly. I feel like this could get partial credit right? Since if I can fix the output format then everything else works ✨ perfectly ✨
+
+**server:**
+
+```sh
+$ python src/ChatApp.py -s 5000
+>>> [Server started on 5000]
+>>> [Server table updated.]
+>>> [Server table updated.]
+>>> [Server table updated.]
+>>> [Server table updated.]
+>>> [Client x created group `group-name` successfully!]
+>>> [Client y joined group `group-name`]
+>>> [Client z joined group `group-name`]
+>>> [Client x joined group `group-name`]
+>>> [Client x sent group message: hey friends]
+>>> [Client y acked group message]
+>>> [Client z acked group message]
+>>> [Client z left group group-name]
+```
+
+**client x:**
+
+```sh
+$ python src/ChatApp.py -c x 0.0.0.0 5000 5555
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+>>> [Client table updated.]
+>>> [Client table updated.]
+create_group group-name
+>>> [Group group-name created by Server.]
+>>> join_group group-name
+>>> [Entered group group-name successfully!]
+>>> (group-name) send_group hey friends
+>>> (group-name) [Message received by Server.]
+>>> (group-name) 
+```
+
+**client y:**
+
+```sh
+$ python src/ChatApp.py -c y 0.0.0.0 5000 5556
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+>>> [Client table updated.]
+join_group group-name
+>>> [Entered group group-name successfully!]
+>>> (group-name) >>> (group-name) Group_Message x: hey friends
+```
+
+**client z:**
+
+```sh
+$ python src/ChatApp.py -c z 0.0.0.0 5000 5557
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> >>> [Client table updated.]
+join_group group-name
+>>> [Entered group group-name successfully!]
+>>> (group-name) >>> (group-name) Group_Message x: hey friends
+leave_group
+>>> [Leave group chat group-name]
+>>> [>>> a: call me when you're back]
+
+```
+
+**client a:**
+
+```sh
+$ python src/ChatApp.py -c a 0.0.0.0 5000 5558
+>>> [Welcome, You are registered.]
+>>> [Client table updated.]
+>>> send z call me when you're back
+>>> [Message received by z]
+>>> 
+```
+
 ## Callouts
 
 ### 1. @todos
 
 I've decided to keep my todos that I didn't address for transparency, which are commented and include questions and/or tech debt that I would fix if this were a longer term project (not sure if we plan on using this implementation in the next project or we'll start from scratch).
 
-### 2. Logging output is wack
+### 2. Deregistration
+
+In test case 2 when `y` runs dereg the server is aware of this change and when a user tries to send a message to them, the client checks and sees if the table has that user still alive. In this case we have a custom message that fails fast to the user `Unable to send to non-existent {client}` which is a better user experience. If the user didn't gracefully dereg then the retries would still occur.
+
+### 3. Logging output is wack
 
 Sometimes the logger prints in an unordered fashion where parallel actions (e.g. client table updates) cause output go get printed out while we're waiting for input. This means the input can go on a newline which is very suboptimal.
 
