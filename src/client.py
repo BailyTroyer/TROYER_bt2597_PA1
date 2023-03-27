@@ -191,7 +191,7 @@ class Client:
 
         recipient_metadata = self.connections.get(recipient_name, {})
         client_port = recipient_metadata.get("client_port")
-        client_ip = "0.0.0.0"  # @todo we need to track this on client INIT
+        client_ip = recipient_metadata.get("client_ip")
         client_destination = (client_ip, client_port)
 
         retries = 0
@@ -253,7 +253,7 @@ class Client:
         """Sends an ACK to the sender of an incoming DM."""
         recipient_metadata = self.connections.get(recipient_name, {})
         client_port = recipient_metadata.get("client_port")
-        client_ip = "0.0.0.0"  # @todo we need to track this on client INIT
+        client_ip = recipient_metadata.get("client_ip")
         client_destination = (client_ip, client_port)
         message = self.encode_message("message_ack", self.opts["name"])
         try:

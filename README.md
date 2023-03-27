@@ -23,7 +23,7 @@ $ tree
 │   │   └── server.cpython-38.pyc
 │   ├── client.py
 │   ├── log.py
-│   ├── main.py
+│   ├── ChatApp.py
 │   └── server.py
 ├── test.py
 └── test.txt
@@ -40,7 +40,7 @@ We can break down the abstractions in the codebase into four _objectives_:
 
 ### 1. CLI Input Validation
 
-In [main.py](./src/main.py) we handle the root `parse_mode_and_go` method which handles input validation along with starting the respective client/server class (to be explained further down) which listens and creates the required UDP sockets.
+In [ChatApp.py](./src/ChatApp.py) we handle the root `parse_mode_and_go` method which handles input validation along with starting the respective client/server class (to be explained further down) which listens and creates the required UDP sockets.
 
 A custom exception `InvalidArgException` is used to handle different error states such as invalid argument types, incomplete args and a default message simulating regular terminal CLIs (e.g `kubectl`). Since there was a mandate against public packages I used `sys.argv` instead of a fancier arg parser such as [click](https://click.palletsprojects.com/en/8.1.x/).
 
@@ -48,7 +48,7 @@ A custom exception `InvalidArgException` is used to handle different error state
 
 **For the client:**
 
-In [main.py](./src/main.py) we initialize the client and call `start` which handles:
+In [ChatApp.py](./src/ChatApp.py) we initialize the client and call `start` which handles:
 1. Listening to signals (e.g. `^C`)
 2. Starting the server listen thread (UDP socket)
 3. Listening to the user input via `input`
@@ -65,7 +65,7 @@ From `send_message` we simply call single-purpose methods that match the require
 
 **For the server:**
 
-In [main.py](./src/main.py) we initialize the server and call `listen` which handles:
+In [ChatApp.py](./src/ChatApp.py) we initialize the server and call `listen` which handles:
 
 * Listening on a UDP socket
   * Calling `handle_request` which pattern matches an inbound message `type` field to respective utility methods corresponding to server-side business logic (e.g. handling registration, group commands, etc)
@@ -111,7 +111,7 @@ This supports handling logs from different threads, and for easier debugging all
 You can get the main structure of the CLI with no args:
 
 ```sh
-$ python src/main.py
+$ python src/ChatApp.py
 ChatApp allows you to spinup a client and server for UDP based chatting.
 
 Commands:
@@ -127,22 +127,22 @@ Usage:
 The following example starts the server on port `5000`:
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 ```
 
 If validation fails it will print an "Invalid" message:
 
 ```sh
 # Not a valid port number
-$ python src/main.py -s not-a-port-number
+$ python src/ChatApp.py -s not-a-port-number
 Invalid <port>: not-a-port-number; Must be within 1024-65535
 
 # Not a valid port range
-$ python src/main.py -s 1
+$ python src/ChatApp.py -s 1
 Invalid <port>: 1; Must be within 1024-65535
 
 # Missing the port value
-$ python src/main.py -s
+$ python src/ChatApp.py -s
 `-s` only accepts <port>
 ```
 
@@ -152,26 +152,26 @@ The following example starts a client named `client` on port `5555`
 connecting to server `0.0.0.0:5000`:
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5556
 ```
 
 If validation fails it will print an "Invalid" message:
 
 ```sh
 # Invalid client port
-$ python src/main.py -c client4 0.0.0.0 5000 not-a-port-value
+$ python src/ChatApp.py -c client4 0.0.0.0 5000 not-a-port-value
 Invalid <client-port>: not-a-port-value; Must be within 1024-65535
 
 # Invalid server port
-$ python src/main.py -c client4 0.0.0.0 not-a-port-value 5556
+$ python src/ChatApp.py -c client4 0.0.0.0 not-a-port-value 5556
 Invalid <server-port>: not-a-port-value; Must be within 1024-65535
 
 # Invalid IPv4 format
-$ python src/main.py -c client4 not-an-ip 5000 5556
+$ python src/ChatApp.py -c client4 not-an-ip 5000 5556
 Use only IPv4 addressing
 
 # Missing the argument values
-$ python src/main.py -c
+$ python src/ChatApp.py -c
 `-c` only accepts <name> <server-ip> <server-port> <client-port>
 ```
 
@@ -184,14 +184,14 @@ $ python src/main.py -c
 #### Connecting
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 
 ```
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> 
@@ -202,7 +202,7 @@ $ python src/main.py -c client 0.0.0.0 5000 5555
 **Client w/ Ctrl-C:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> ^C
@@ -212,7 +212,7 @@ $ python src/main.py -c client 0.0.0.0 5000 5555
 **Server w/ Ctrl-C:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 ^C
 >>> [Quitting.]
@@ -231,7 +231,7 @@ Here we startup the server, then client1 then client2. After all are setup we ru
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -242,7 +242,7 @@ $ python src/main.py -s 5000
 > Notice the output format gets broken. This is mentioned in [Callouts](#Callouts) below.
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -252,7 +252,7 @@ $ python src/main.py -c client 0.0.0.0 5000 5555
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> send client hello there :)
@@ -269,7 +269,7 @@ Here the startup is the same as before, except once all three are running we do 
 > Notice we have a third server table update since the client is offline, and thus auto deregistered.
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -281,7 +281,7 @@ $ python src/main.py -s 5000
 > Notice the output format gets broken. This is mentioned in [Csage](#Callouts) below.
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -292,7 +292,7 @@ $ python src/main.py -c client 0.0.0.0 5000 5555
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> send client hello there :)
@@ -311,7 +311,7 @@ Here we start a client + server and then call `dereg`
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated. (removed client)]
@@ -320,7 +320,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> dereg client
@@ -335,7 +335,7 @@ Here we attempt to dereg `foo` when the client is `client` from the initial CLI 
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 ```
@@ -343,7 +343,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> dereg foo
@@ -358,7 +358,7 @@ Here the server is shut down (SIGINT) before the server attempts a `dereg` with 
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 ^C
@@ -368,7 +368,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> dereg client
@@ -385,7 +385,7 @@ Start server, start client, create group chat.
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -394,7 +394,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -409,7 +409,7 @@ The server gets SIGINT after client registers, but before `create_group` is call
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 ^C
@@ -419,7 +419,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -435,7 +435,7 @@ We create a group `group-name` and try again, which throws an already exists err
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -445,7 +445,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -464,7 +464,7 @@ We create a group and then list it, followed by creating another group and listi
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -479,7 +479,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -503,7 +503,7 @@ We start the client & server, create a group and stop the server before client c
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -514,7 +514,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -533,7 +533,7 @@ Create group, join group.
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -543,7 +543,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -560,7 +560,7 @@ Try to join group `group-name` that doesn't exist.
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client joining group `group-name` failed, group does not exist]
@@ -569,7 +569,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -584,7 +584,7 @@ Create group, but stop the server before `join_group` is called on client
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -595,7 +595,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -615,7 +615,7 @@ Here we start the server and 2 clients. Then `client` creates a group `group-nam
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -629,7 +629,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -647,7 +647,7 @@ create_group group-name
 > As mentioned in callouts (just placing focus here), the output is slightly broken since the input thread is hogging the newline so formatting gets wonky. Note typing input on client2 still works and nothing is "broken" regarding messaging.
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -662,7 +662,7 @@ Here we follow the previous steps except we stop `client2` right before `client`
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -676,7 +676,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -692,7 +692,7 @@ create_group group-name
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -708,7 +708,7 @@ We start the server, create and join the group then stop the server right before
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Client client created group `group-name` successfully!]
@@ -720,7 +720,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -742,7 +742,7 @@ Start the server and have both clients join group.
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -760,7 +760,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -778,7 +778,7 @@ create_group group-name
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -797,7 +797,7 @@ Start server, create group, then close server before clients can run `list_membe
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -811,7 +811,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -828,7 +828,7 @@ create_group group-name
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -848,7 +848,7 @@ Start server, create & join group and leave. The 2nd client then runs list_membe
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -869,7 +869,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -889,7 +889,7 @@ create_group group-name
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -911,7 +911,7 @@ Similar to the case before but we stop the server before the client can try leav
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -931,7 +931,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -952,7 +952,7 @@ create_group group-name
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> join_group group-name
@@ -973,7 +973,7 @@ Start server, create and join group, then client2 sends message to `client` whic
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 >>> [Server table updated.]
@@ -985,7 +985,7 @@ $ python src/main.py -s 5000
 **client1:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> >>> [Client table updated.]
@@ -1002,7 +1002,7 @@ create_group group-name
 **client2:**
 
 ```sh
-$ python src/main.py -c client2 0.0.0.0 5000 5556
+$ python src/ChatApp.py -c client2 0.0.0.0 5000 5556
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> send client call me back :(
@@ -1015,7 +1015,7 @@ $ python src/main.py -c client2 0.0.0.0 5000 5556
 #### Shows error when sending normal commands in group mode
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> create_group group-name
@@ -1030,7 +1030,7 @@ $ python src/main.py -c client 0.0.0.0 5000 5555
 #### Shows error when sending group commands in normal mode
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> send_group hi
@@ -1050,7 +1050,7 @@ In this case there's no issue if you want to send messages to yourself. Not sure
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 ```
@@ -1058,7 +1058,7 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> send client yo dawg heard you like clients
@@ -1074,7 +1074,7 @@ Here we can simulate this by hard closing the client and starting again with the
 **server:**
 
 ```sh
-$ python src/main.py -s 5000
+$ python src/ChatApp.py -s 5000
 >>> [Server started on 5000]
 >>> [Server table updated.]
 ```
@@ -1082,12 +1082,12 @@ $ python src/main.py -s 5000
 **client:**
 
 ```sh
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [Welcome, You are registered.]
 >>> [Client table updated.]
 >>> ^C
 >>> [stopping client-server listener]
-$ python src/main.py -c client 0.0.0.0 5000 5555
+$ python src/ChatApp.py -c client 0.0.0.0 5000 5555
 >>> [`client` already exists!]
 >>> [stopping client-server listener]
 ```
